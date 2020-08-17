@@ -1,0 +1,216 @@
+`timescale 1ns/1ps
+module gcd (out, ready, start, rst, a_in, b_in, clk);
+  parameter N = 32;
+  input [N-1:0] a_in, b_in;
+  input start, rst, clk;
+  output [N-1:0] out;
+  output ready;
+  wire e,f,load_a, load_b, sub_a, sub_b;
+  
+  datapath dp (out, e, f, load_a, load_b, sub_a, sub_b, a_in, b_in, clk);
+  controller cp (load_a, load_b, sub_a, sub_b, ready, start, rst, clk, e, f);
+  
+endmodule
+
+
+`timescale 1ns/1ps
+module controller(load_a, load_b, sub_a, sub_b, ready, start, rst, clk, e, f);
+  input start, rst, clk, e, f;
+  output reg load_a, load_b, sub_a, sub_b;
+  output ready;
+  reg [2:0] state, next_state;
+  parameter S0 = 3'b000, S1 = 3'b001, S2 = 3'b010, S3 = 3'b011, S4 = 3'b100;
+  assign ready = (state==S0)?1:0;
+  
+  always@ (posedge clk, negedge rst)
+    if(rst==0) state <= S0;
+    else state <= next_state;
+  
+  always@ (e, f, state, start)
+    begin
+      load_a = 0;
+      load_b = 0;
+      sub_a = 0;
+      sub_b = 0;
+      case (state)
+        S0: begin
+              if(start) begin load_a = 1; load_b = 1; next_state = S1; end
+              else next_state <= S0;
+              end
+        S1: begin
+              if(e==1) next_state = S0;
+              else if(f==1) next_state = S2;
+              else next_state = S3;
+            end
+        S2: begin
+              sub_a = 1;
+          	  load_a = 1;
+              next_state = S4;
+            end
+        S3: begin
+              sub_b = 1;
+          	  load_b = 1;
+              next_state = S4;
+            end
+        S4: next_state = S1;
+      endcase
+    end
+endmodule
+
+
+
+`timescale 1ns/1ps
+module datapath(out, e, f, load_a, load_b, sub_a, sub_b, a_in, b_in, clk);
+  parameter N = 32;
+  input [N-1:0] a_in, b_in;
+  input load_a, load_b, sub_a, sub_b, clk;
+  output [N-1:0] out;
+  output e, f;
+  wire [N-1:0] a, b;
+  wire [N-1:0] subouta, suboutb, muxouta, muxoutb; 
+  
+  assign out = a;
+  
+  subtractor s1 (subouta, a, b);
+  subtractor s2 (suboutb, b, a);
+  mux m1 (muxouta, subouta, a_in, sub_a);
+  mux m2 (muxoutb, suboutb, b_in, sub_b);
+  register A (a, muxouta, load_a, clk);
+  register B (b, muxoutb, load_b, clk);
+  comparator c (e, f, a, b);
+endmodule
+
+`timescale 1ns/1ps
+module register(out, in, load, clk);
+  parameter N = 32;
+  input [N-1:0]in;
+  input clk;
+  input load;
+  output reg [N-1:0] out;
+  
+  always @(posedge clk)
+    if(load) out <= in;
+endmodule
+
+`timescale 1ns/1ps
+module mux(out, i1, i0, s);
+  parameter N = 32;
+  input [N-1:0] i1, i0;
+  input s;
+  output reg [N-1:0] out;
+  always@ (*)
+    case(s)
+      0: out = i0;
+      1: out = i1;
+    endcase
+endmodule
+
+`timescale 1ns/1ps
+module comparator(e, f, a, b);
+  parameter N = 32;
+  input [N-1:0] a, b;
+  output reg e, f;
+  always@ (*)
+    begin
+      if(a==b) begin e=1; f=0; end
+      else if(a>b) begin e=0; f=1; end
+      else begin e=0; f=0; end
+    end
+endmodule
+
+`timescale 1ns/1ps
+module subtractor(out,x,y);
+input [31:0] x;
+input [31:0] y;
+output [31:0] out;
+wire [31:0]y2;
+wire cout;
+
+assign y2 = ~y;
+
+  cla32bit d1 (.x(x), .y(y2), .s(out), .cin(1'b1), .cout(cout));
+
+endmodule
+
+`timescale 1ns/1ps
+module cla32bit(x,y,cin,s,cout);
+input [31:0] x;
+input [31:0] y;
+input cin;
+output [31:0] s;
+output cout;
+
+wire [7:1]c;
+
+cla4bit a1 (.x(x[3:0]), .y(y[3:0]), .cin(cin), .cout(c[1]), .s(s[3:0]));
+cla4bit a2 (.x(x[7:4]), .y(y[7:4]), .cin(c[1]), .cout(c[2]), .s(s[7:4]));
+cla4bit a3 (.x(x[11:8]), .y(y[11:8]), .cin(c[2]), .cout(c[3]), .s(s[11:8]));
+cla4bit a4 (.x(x[15:12]), .y(y[15:12]), .cin(c[3]), .cout(c[4]), .s(s[15:12]));
+cla4bit a5 (.x(x[19:16]), .y(y[19:16]), .cin(c[4]), .cout(c[5]), .s(s[19:16]));
+cla4bit a6 (.x(x[23:20]), .y(y[23:20]), .cin(c[5]), .cout(c[6]), .s(s[23:20]));
+cla4bit a7 (.x(x[27:24]), .y(y[27:24]), .cin(c[6]), .cout(c[7]), .s(s[27:24]));
+cla4bit a8 (.x(x[31:28]), .y(y[31:28]), .cin(c[7]), .cout(cout), .s(s[31:28]));
+
+endmodule 
+
+`timescale 1ns/1ps
+module cla4bit(x,y,cin,s,cout);
+input [3:0] x;
+input [3:0] y;
+input cin;
+output [3:0] s;
+output cout;
+
+wire p0,p1,p2,p3,g0,g1,g2,g3;
+wire [3:0] c;
+
+assign p0=x[0]^y[0];
+assign p1=x[1]^y[1];
+assign p2=x[2]^y[2];
+assign p3=x[3]^y[3];
+
+assign g0=x[0]&y[0];
+assign g1=x[1]&y[1];
+assign g2=x[2]&y[2];
+assign g3=x[3]&y[3];
+
+assign c[0]=cin;
+
+assign c[1] = g0|(p0&c[0]);
+assign c[2] = g1|(p1&g0)|(p1&p0&c[0]);
+assign c[3] = g2|(p2&g1)|(p2&p1&g0)|(p2&p1&p0&c[0]);
+assign cout = g3|(p3&g2)|(p3&p2&g1)|(p3&p2&p1&g0)|(p3&p2&p1&p0&c[0]);
+
+assign s[0] = p0^c[0];
+assign s[1] = p1^c[1];
+assign s[2] = p2^c[2];
+assign s[3] = p3^c[3];
+
+endmodule
+
+
+//testbench
+
+
+`timescale 1ns/1ps
+module test;
+  parameter N = 32;
+  wire ready;
+  wire [N-1:0] out;
+  reg start, rst, clk;
+  reg [N-1:0]a_in, b_in; 
+  gcd lol (.out(out), .ready(ready), .start(start), .rst(rst), .a_in(a_in), .b_in(b_in), .clk(clk));
+  
+  initial
+    begin
+      $dumpfile("hello.vcd");
+      $dumpvars(0,test);
+      rst=1; clk=0; start =1;
+      #1 rst=0;
+      #1 rst=1; a_in=429496729 ;b_in = 400000000;
+      #20 start = 0;
+      #2000 $finish;
+    end
+  
+  always #5 clk = ~clk;
+endmodule
